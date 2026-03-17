@@ -43,7 +43,7 @@ The codebase includes:
 - benchmark aggregation,
 - ranking, Pareto analysis, and plotting utilities.
 
-> **Current status note:** based on the benchmark CSV currently associated with this README, **weather** includes dCeNN+ELM results, while **energy** currently includes **CNN/LSTM baseline results only**.
+> **Current status note:**weather** includes dCeNN+ELM results, while **energy** currently includes **CNN/LSTM baseline results only**.
 
 ---
 
@@ -69,9 +69,9 @@ The current **weather configuration** predicts four targets:
 - `mean_global_radiation`
 - `mean_wind_speed`
 
-So this repository is **not** the old total-energy setup from the reference repo. It has been adapted to the new dataset and task definitions used in this thesis.
+So this repository is **not** the old total-energy setup from the reference repo. It has been adapted to the new dataset and task definitions used in this repo.
 
-> **Important implementation note:** the repo contains an **energy configuration and scripts for the proposed pipeline**, but the **current benchmark CSV used for this README does not contain trained energy dCeNN+ELM results**. In that export, energy comparisons are between **CNN** and **LSTM** baselines. Energy configurations are yet to be trained.
+> **Important implementation note:** the repo contains an **energy configuration and scripts for the proposed pipeline**, but the **repo does not contain trained energy dCeNN+ELM results**. In that export, energy comparisons are between **CNN** and **LSTM** baselines. Energy configurations are yet to be trained.
 
 ---
 
