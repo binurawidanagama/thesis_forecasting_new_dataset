@@ -1,7 +1,7 @@
 # Efficient Hybrid Learning-and-Reasoning for Multi-Horizon Multivariate Time-Series Forecasting under Resource Constraints
 ### dCeNN-ELM-ASP vs. LSTM/CNN on Austrian 15-Minute Weather and Energy Data
 
-> **Key idea:** this repository implements a neuro-symbolic forecasting pipeline for **15-minute resolution Austrian weather and energy data**. A compact **dCeNN encoder** learns temporal representations, an **ELM head** performs fast forecasting, and **ASP (Answer Set Programming)** applies post-hoc logical / physics-aware repair rules. The pipeline is benchmarked against **CNN** and **LSTM** baselines.
+> **Key idea:** this repository contains a neuro-symbolic forecasting framework for **15-minute resolution Austrian weather and energy data**. In the **current exported results**, the **dCeNN → ELM → ASP path is trained and benchmarked for the weather task**, while the **energy benchmark results currently included are baseline-only (CNN/LSTM)**. The repo still contains the energy configuration and pipeline scaffolding for the proposed approach.
 
 ---
 
@@ -16,16 +16,18 @@
 8. [Models and symbolic layer](#models-and-symbolic-layer)
 9. [How to run the code](#how-to-run-the-code)
 10. [Benchmarking and visualisation](#benchmarking-and-visualisation)
-11. [Outputs produced by the pipeline](#outputs-produced-by-the-pipeline)
-12. [Notes on naming conventions](#notes-on-naming-conventions)
-13. [Dependencies](#dependencies)
-14. [Thesis context](#thesis-context)
+11. [Selected benchmark results](#selected-benchmark-results)
+12. [Outputs produced by the pipeline](#outputs-produced-by-the-pipeline)
+13. [Notes on naming conventions](#notes-on-naming-conventions)
+14. [Dependencies](#dependencies)
+15. [Thesis context](#thesis-context)
+16. [Suggested citation / description](#suggested-citation--description)
 
 ---
 
 ## Overview
 
-This repository contains the full experimental pipeline for a thesis on **Efficient Hybrid Learning-and-Reasoning for Multi-Horizon Multivariate Time-Series Forecasting under Resource Constraints: A Comparative Evaluation of dCeNN–ELM–ASP approach with LSTM and CNN on Weather and Energy Data**.
+This repository contains the full experimental pipeline for a thesis on **Efficient Hybrid Learning-and-Reasoning for Multi-Horizon Multivariate Time-Series Forecasting under Resource Constraints: A Comparative Evaluation of dCeNN–ELM–ASP approach with LSTM and CNN on Weather and Energy Data**. The focus is not just raw prediction accuracy, but the trade-off between:
 
 - predictive performance,
 - computational cost,
@@ -35,11 +37,13 @@ This repository contains the full experimental pipeline for a thesis on **Effici
 The codebase includes:
 
 - data preparation and feature engineering,
-- dCeNN + ELM forecasting pipelines,
+- the proposed dCeNN + ELM + ASP workflow,
 - CNN and LSTM baselines,
-- ASP-based post-processing for energy and weather tasks,
+- ASP-based post-processing logic for energy and weather tasks,
 - benchmark aggregation,
 - ranking, Pareto analysis, and plotting utilities.
+
+> **Current status note:** based on the benchmark CSV currently associated with this README, **weather** includes dCeNN+ELM results, while **energy** currently includes **CNN/LSTM baseline results only**.
 
 ---
 
@@ -64,6 +68,10 @@ The current **weather configuration** predicts four targets:
 - `precipitation_mm`
 - `mean_global_radiation`
 - `mean_wind_speed`
+
+So this repository is **not** the old total-energy setup from the reference repo. It has been adapted to the new dataset and task definitions used in this thesis.
+
+> **Important implementation note:** the repo contains an **energy configuration and scripts for the proposed pipeline**, but the **current benchmark CSV used for this README does not contain trained energy dCeNN+ELM results**. In that export, energy comparisons are between **CNN** and **LSTM** baselines. Energy configurations are yet to be trained.
 
 ---
 
@@ -214,41 +222,42 @@ The current configs indicate a **15-minute time resolution** and use `Time (UTC)
 
 ---
 
+
 ## Feature engineering
 
-The repository uses **explicitly engineered calendar and seasonal features** to help the models learn repeating temporal structure without relying on raw timestamps alone. This is especially important for 15-minute forecasting, where time-of-day, weekly patterns, and holidays strongly influence both electricity demand and weather-linked behaviour.
+The feature design is intentionally **calendar-aware** and **periodicity-aware**. Instead of feeding raw timestamps directly into the models, the pipeline uses engineered variables that make recurring temporal structure easier to learn and avoid artificial discontinuities.
 
-### Why these features are used
+### Why not use raw timestamps?
+A raw hour value such as `23` followed by `0` creates a fake numerical jump even though those times are adjacent. Cyclical encodings solve that problem by mapping periodic variables onto a circle, so midnight is close to 23:45 rather than far away.
 
-Instead of feeding the model a plain hour or date index, the pipeline encodes time in a form that better reflects real periodic behaviour. For example, **23:45 and 00:00 are close in reality**, but naive numeric timestamps make them look far apart. Cyclical encodings fix that.
-
-### Core engineered features
+### Core engineered temporal and calendar features
 
 | Feature | Type | Description |
 |---|---|---|
-| `hour_sin` / `hour_cos` | Cyclical | Sine/cosine encoding of time-of-day, preserving the circular nature of hourly patterns. |
-| `dow_sin` / `dow_cos` | Cyclical | Sine/cosine encoding of day-of-week effects, useful for weekday vs. weekend demand differences. |
-| `month_sin` / `month_cos` | Cyclical | Sine/cosine encoding of annual seasonality across months. |
-| `is_weekend` | Boolean | Binary indicator for Saturday and Sunday. |
-| `is_public_holiday` | Boolean | Binary indicator for official Austrian public holidays. |
-| `is_special_day` | Boolean | Binary indicator for bridge days or other special calendar effects around holidays. |
+| `hour_sin`, `hour_cos` | Cyclical | Sine/cosine encoding of time-of-day; avoids the 23:00 → 00:00 discontinuity. |
+| `dow_sin`, `dow_cos` | Cyclical | Sine/cosine encoding of day-of-week patterns. |
+| `month_sin`, `month_cos` | Cyclical | Sine/cosine encoding of seasonal monthly structure. |
+| `is_weekend` | Boolean | Flag for Saturdays and Sundays. |
+| `is_public_holiday` | Boolean | Flag for official Austrian public holidays. |
+| `is_special_day` | Boolean | Flag for bridging days or non-statutory special observance days used in the preprocessing logic. |
 
 ### Task-specific inputs
 
-For the **energy task**, these engineered calendar features are combined with weather drivers and the historical load series itself:
+For the **energy task**, the current configuration combines:
+- engineered temporal features,
+- holiday / weekend indicators,
+- weather drivers (`temperature_2m_C`, `precipitation_mm`, `mean_global_radiation`, `mean_wind_speed`), and
+- the target-linked energy series `load_mw`.
 
+For the **weather task**, the configuration keeps the same time-aware structure and predicts four physical weather variables jointly:
 - `temperature_2m_C`
 - `precipitation_mm`
 - `mean_global_radiation`
 - `mean_wind_speed`
-- `load_mw`
 
-For the **weather task**, the same temporal structure helps the model learn seasonal and diurnal dynamics alongside the meteorological variables being forecast.
-
-In practical terms, this feature design gives the models a structured notion of **time, seasonality, and social rhythm** rather than forcing them to rediscover it from scratch like a sleep-deprived raccoon doing statistics at 3 a.m.
+This design makes the repository suitable for **multi-horizon forecasting under periodic seasonal structure**, while keeping the features interpretable enough for thesis reporting and ablation discussion.
 
 ---
-
 ## Train / validation / test split
 
 Both `energy_full.yaml` and `weather_full.yaml` use the following split boundaries:
@@ -395,6 +404,40 @@ The plotting utilities generate global ranking and Pareto-style views of the acc
 
 ---
 
+
+## Selected benchmark results
+
+The repository already contains consolidated benchmark files such as `benchmarks_master.csv`, `benchmark_table_rmse_ratio.csv`, `benchmark_table_latency_ms.csv`, and the associated ranking / Pareto plots. The table below highlights the **best-RMSE configuration found for each task and forecast horizon** from the uploaded benchmark CSV.
+
+### Best accuracy by task and horizon
+
+> **Reading this table carefully matters:** for **ENERGY**, the current benchmark export contains **baseline-only results** (CNN/LSTM). For **WEATHER**, it contains **CNN, LSTM, and raw dCeNN+ELM** runs.
+
+| Task | Horizon | Best model | Lookback | RMSE | MAE | Latency (ms/sample) | Deploy params |
+|---|---:|---|---:|---:|---:|---:|---:|
+| ENERGY | 12 | CNN | 96 | 4.919 | 3.915 | 0.965 | 52,652 |
+| ENERGY | 24 | CNN | 288 | 5.249 | 4.128 | 2.327 | 53,432 |
+| ENERGY | 72 | LSTM | 96 | 5.859 | 4.533 | 0.570 | 131,073 |
+| WEATHER | 12 | CNN | 288 | 23.679 | 6.527 | 1.498 | 54,800 |
+| WEATHER | 24 | CNN | 288 | 29.341 | 8.376 | 1.516 | 57,920 |
+| WEATHER | 72 | CNN | 288 | 32.525 | 10.744 | 1.628 | 70,400 |
+
+### What these results mean
+
+- **Energy forecasting is very strong relative to the benchmark baseline.** The best energy runs achieve RMSE ratios of approximately **0.213**, **0.154**, and **0.140** for 12h, 24h, and 72h respectively, which corresponds to roughly **78.7%**, **84.6%**, and **86.0%** lower RMSE than the reference baseline used in the benchmark table.
+- **CNN is the most consistent top performer in the current benchmark export.** It gives the lowest RMSE for all three weather horizons and for energy at 12h and 24h. The **LSTM** slightly edges out the others on **energy, 72h horizon**.
+- **Do not over-interpret the energy section as a full proposed-method comparison.** In this CSV, the energy rows are a **baseline-vs-baseline comparison only**, because trained energy dCeNN+ELM results are not present yet.
+- **Inference speed tells a different story from accuracy.** For the energy task, the fastest runs are the **LSTM 96-lookback** models with latency around **0.51–0.57 ms/sample**. For the weather task, the fastest runs in this export are the **raw dCeNN+ELM** models at **~0.52 ms/sample**, but these do **not** provide the best RMSE.
+- **The current raw weather dCeNN+ELM configuration is not the accuracy leader in this CSV.** At lookback 96 it remains reasonably fast but yields RMSE values of **38.660**, **42.452**, and **39.700** for 12h, 24h, and 72h, while the lookback-288 raw setting shows clear instability at 12h and 24h.
+
+### Benchmark artefacts already included in the repository
+
+- `benchmark_pareto_all.png` and `pareto_points.png` for accuracy–efficiency trade-offs
+- `rank_overall.png`, `rank_latency.png`, and `rank_compute_latency.png` for model ranking
+- `benchmark_winners_rmse_ratio.csv` for winner tracking by metric
+- `model_ranking_with_compute_latency.csv` for multi-criteria model scoring
+
+---
 ## Outputs produced by the pipeline
 
 ### General outputs
@@ -479,3 +522,5 @@ across multi-horizon forecasting settings on Austrian weather and energy data un
 The emphasis is on a **reproducible end-to-end research workflow**: from raw CSV ingestion, to forecasting, to symbolic repair, to benchmark aggregation and thesis-ready plots / tables.
 
 ---
+
+## Suggested citation / description
