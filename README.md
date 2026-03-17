@@ -1,274 +1,453 @@
-# Efficient Hybrid Learning-and-Reasoning for Multi-Horizon Multivariate Time-Series Forecasting under Resource Constraints: A Comparative Evaluation of dCeNN–ELM–ASP approach with LSTM and CNN on Weather and Energy Data
+# Efficient Hybrid Learning-and-Reasoning for Multi-Horizon Multivariate Time-Series Forecasting under Resource Constraints
+### dCeNN-ELM-ASP vs. LSTM/CNN on Austrian 15-Minute Weather and Energy Data
 
-A comprehensive thesis research project implementing advanced time series forecasting for **weather features** and **energy features** using a hybrid deep learning and symbolic AI pipeline. The approach combines **dCeNN (Discrete Cellular Neural Networks)**, **ELM (Extreme Learning Machines)**, and **ASP (Answer Set Programming)** for constraint-based optimization, benchmarked against baseline models including **LSTM** and **CNN**.
-
-## Overview
-
-This repository presents an integrated forecasting framework designed for:
-- **Multi-target multivariate forecasting** (wind generation, solar generation, load, weather variables)
-- **Flexible temporal horizons** (12h, 24h, 72h ahead predictions)
-- **Variable context windows** (lookback periods of 24h, 72h, 168h)
-- **ASP-based constraint repair** for physics-aware and business-rule-compliant predictions
-- **Rigorous benchmarking** across accuracy, computational efficiency, and inference latency metrics
-
-## Architecture
-
-### Core Components
-
-1. **Data Pipeline** (`src/dataio/`)
-   - Preprocessing and temporal feature engineering
-   - Train/validation/test splitting with strict UTC boundaries
-   - Windowing and scaling without data leakage
-
-2. **Neural Models** 
-   - **dCeNN (Discrete Cellular Neural Networks)**: Advanced cellular automata-based neural architecture for spatiotemporal pattern recognition
-   - **ELM (Extreme Learning Machines)**: Fast, single-pass learning with random projections for efficient predictions
-   - **Baseline implementations**: LSTM (Seq2Seq), CNN for comparison
-
-3. **Optimization Layer** (`scripts/run_asp.py`)
-   - Answer Set Programming (Clingo solver) for post-processing
-   - Constraint-based repair of raw predictions
-   - Physical constraints (e.g., renewable generation capacity bounds)
-   - Business rules (e.g., night-time solar generation = 0)
-
-4. **Benchmarking & Visualization**
-   - Comprehensive metrics: MAE, RMSE, sMAPE with baseline ratios
-   - Resource tracking: CPU time, memory, model parameters, inference latency
-   - Pareto frontier analysis and model ranking
-
-## Datasets
-
-- **Weather Forecasting**: Historical weather features (radiation, temperature, humidity, wind speed, pressure, precipitation)
-- **Energy Forecasting**: Wind/solar capacity factors and load demand
-
-## Quick Start
-
-### Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-### Running Experiments
-
-#### Step 1: Train & Predict (ELM / dCeNN)
-```bash
-# Example: Weather task, 24-hour lookback, 12-hour horizon
-python scripts/run_lstm_baseline.py --lookback 24
-# or run full pipeline with various configurations
-```
-
-#### Step 2: Apply ASP Post-Processing
-```bash
-python scripts/run_energy_asp.py --config configs/energy_full.yaml --lookback 24 --horizon 12
-python scripts/run_energy_asp.py --config configs/energy_full.yaml --lookback 24 --horizon 24
-python scripts/run_energy_asp.py --config configs/energy_full.yaml --lookback 24 --horizon 72
-```
-
-#### Step 3: Visualization
-```bash
-# Plot Pareto frontier (accuracy vs. latency trade-off)
-python scripts/plot_pareto.py
-
-# Generate benchmark tables
-python scripts/make_benchmark_table.py
-
-# Rank and visualize models
-python scripts/rank_and_plot_benchmarks.py
-
-# Plot weekly predictions with ground truth
-python scripts/viz_results.py --config configs/weather_full.yaml
-
-# Weather meteogram visualization
-python scripts/viz_weather_meteogram.py --config configs/weather_full.yaml --date 2022-08-01
-```
-
-## Directory Structure
-
-```
-thesis_forecasting/
-├── src/                           # Core library code
-│   ├── config.py                  # Configuration loader
-│   ├── dataio/                    # Data loading & preprocessing
-│   │   ├── preprocess.py          # Train/val/test split, feature engineering
-│   │   └── window.py              # Temporal windowing
-│   └── inference/                 # Prediction pipelines
-│       └── predict.py             # Inference runner
-│
-├── scripts/                       # Standalone execution scripts
-│   ├── run_lstm_baseline.py       # LSTM baseline training & benchmarking
-│   ├── run_asp.py                 # ASP post-processing for weather
-│   ├── run_energy_asp.py          # ASP post-processing for energy
-│   ├── predict.py                 # Standalone inference
-│   ├── plot_pareto.py             # Pareto frontier visualization
-│   ├── make_benchmark_table.py    # Generate summary tables
-│   ├─��� rank_and_plot_benchmarks.py # Model ranking & scoring
-│   ├── viz_results.py             # Weekly forecast visualization
-│   └── viz_weather_meteogram.py   # Weather variable time series plots
-│
-├── configs/                       # YAML configuration files
-│   ├── weather_full.yaml          # Weather forecasting config
-│   └── energy_full.yaml           # Energy forecasting config
-│
-├── data/                          # Input data (not included; prepare locally)
-├── checkpoints/                   # Trained model weights
-├── outputs/                       # Raw predictions & intermediate files
-├── outputs_weather_full/          # Weather task outputs
-├── outputs_energy_full/           # Energy task outputs
-├── artifacts_lstm_baseline/       # LSTM baseline results
-├── artifacts_cnn_baseline/        # CNN baseline results
-├── plots/                         # Generated visualizations
-│
-├── benchmarks_master.csv          # Full benchmark results (all configs)
-├── benchmarks_scored.csv          # Scored & ranked results
-├── benchmark_table_rmse_ratio.csv # Accuracy comparison table
-├── benchmark_table_latency_ms.csv # Inference latency comparison
-├── benchmark_winners_rmse_ratio.csv # Best model per setting
-│
-├── model_ranking_overall.csv      # Overall model ranking
-├── model_ranking_with_compute_latency.csv
-├── model_means_scatter.png        # Model performance scatter plot
-├── model_ranking_bar.png          # Ranking bar chart
-├── rank_overall.png               # Overall ranking visualization
-├── rank_compute_only.png          # Computation-only ranking
-├── rank_latency.png               # Latency-only ranking
-├── rank_compute_latency.png       # Combined metrics ranking
-├── benchmark_pareto_all.png       # Pareto frontier plot
-├── pareto_points.png              # Detailed Pareto visualization
-│
-└── requirements.txt               # Python dependencies
-```
-
-## Key Results
-
-### Benchmarking Framework
-- **Accuracy Metrics**: RMSE ratio (relative to persistence baseline), MAE, sMAPE
-- **Efficiency Metrics**: 
-  - Training: CPU time, peak RAM, parameter count
-  - Inference: latency per sample (ms), model size (MB)
-  - Compute-aware scoring across multiple dimensions
-
-### Model Comparison
-Results stored in `benchmarks_master.csv` and visualized across:
-- **Pareto frontier**: Accuracy vs. inference latency trade-off
-- **Model rankings**: Overall, computation-only, latency-only scores
-- **Per-task winners**: Best model for each (task, lookback, horizon) configuration
-
-### Supported Grid
-- **Tasks**: Weather, Energy
-- **Lookback Windows**: 24h, 72h, 168h (1 week)
-- **Forecast Horizons**: 12h, 24h, 72h (3 days)
-- **Models**: dCeNN, ELM, LSTM baseline, CNN baseline
-
-## Configuration
-
-Edit `configs/weather_full.yaml` or `configs/energy_full.yaml` to customize:
-- Feature selection & engineering
-- Train/val/test date ranges
-- Model hyperparameters
-- ASP constraint rules (night hours for solar, capacity bounds, etc.)
-- Output directories
-
-Example:
-```yaml
-features:
-  context_hours: 24         # Lookback window
-  horizon_hours: 12         # Forecast horizon
-
-asp:
-  pv_night_hours: [18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6]  # Solar = 0 at night
-```
-
-## Metrics & Evaluation
-
-### Accuracy
-- **RMSE** (Root Mean Squared Error)
-- **MAE** (Mean Absolute Error)
-- **sMAPE** (Symmetric Mean Absolute Percentage Error)
-- **RMSE Ratio**: Normalized by persistence baseline
-
-### Efficiency
-- **Latency**: Milliseconds per sample (inference only)
-- **Model Size**: Megabytes on disk
-- **Training Time**: Wall-clock and CPU seconds
-- **Peak Memory**: RAM usage during training
-- **Parameter Count**: Total & deployment parameters
-
-### Pareto Analysis
-- Identifies non-dominated models (best on multiple objectives)
-- Visualization in scatter plots and bar charts
-
-## Use Cases
-
-1. **Renewable Energy Integration**: Wind/solar forecasting for grid operations
-2. **Load Forecasting**: Electricity demand prediction for grid planning
-3. **Weather-Driven Analytics**: Fine-grained weather forecasting for operational decisions
-4. **Constraint-Aware ML**: Learning with physics and business rule constraints via ASP
-
-## ASP Post-Processing
-
-The ASP pipeline applies logical constraints to refine raw neural predictions:
-
-**Example facts** (generated from raw predictions):
-```prolog
-pred(solar, sample_123, horizon_1, 50).      % Raw prediction: 50 units
-night(sample_123, horizon_1).                 % Night time detected
-```
-
-**Constraint repair logic**:
-```prolog
-% If solar forecast during night, repair to 0
-repair(solar, sample, S, H) :- 
-    pred(solar, S, H, X), X > 0, night(S, H).
-```
-
-**Repair statistics** tracked:
-- Total repairs applied
-- Cells changed
-- Mean/max adjustment magnitude
-- Repairs by kind & target
-
-## Discrete Cellular Neural Networks (dCeNN)
-
-dCeNN is an advanced neural architecture that leverages cellular automata principles for spatiotemporal forecasting:
-- **Cellular Structure**: Operates on discrete grid-based representations of temporal sequences
-- **Local Interactions**: Neurons update based on neighbors, enabling efficient parallel computation
-- **Spatiotemporal Patterns**: Captures complex temporal dependencies through local update rules
-- **Computational Efficiency**: Lower memory footprint and inference latency compared to traditional RNNs/CNNs
-
-## Dependencies
-
-- **Data Processing**: pandas, numpy
-- **ML Frameworks**: TensorFlow/Keras (for LSTM, CNN, dCeNN)
-- **ASP Solver**: Clingo (Answer Set Programming)
-- **Utilities**: scikit-learn, matplotlib, seaborn, PyYAML, psutil
-
-See `requirements.txt` for exact versions.
-
-## Citation
-
-If you use this work in research, please cite the associated thesis:
-
-```bibtex
-@thesis{binura_thesis_2024,
-  author={Binura Widanagama},
-  title={Advanced Time Series Forecasting with Hybrid Neural and Symbolic AI},
-  year={2024}
-}
-```
-
-## Author
-
-**Binura Widanagama**  
-University Of Klagenfurt
+> **Key idea:** this repository implements a neuro-symbolic forecasting pipeline for **15-minute resolution Austrian weather and energy data**. A compact **dCeNN encoder** learns temporal representations, an **ELM head** performs fast forecasting, and **ASP (Answer Set Programming)** applies post-hoc logical / physics-aware repair rules. The pipeline is benchmarked against **CNN** and **LSTM** baselines.
 
 ---
 
-## Contact & Support
+## Table of Contents
+1. [Overview](#overview)
+2. [What this repository predicts](#what-this-repository-predicts)
+3. [Architecture overview](#architecture-overview)
+4. [Repository structure](#repository-structure)
+5. [Dataset and files](#dataset-and-files)
+6. [Train / validation / test split](#train--validation--test-split)
+7. [Models and symbolic layer](#models-and-symbolic-layer)
+8. [How to run the code](#how-to-run-the-code)
+9. [Benchmarking and visualisation](#benchmarking-and-visualisation)
+10. [Outputs produced by the pipeline](#outputs-produced-by-the-pipeline)
+11. [Notes on naming conventions](#notes-on-naming-conventions)
+12. [Dependencies](#dependencies)
+13. [Thesis context](#thesis-context)
 
-For questions, issues, or contributions:
-- Email: biwidanagama@edu.aau.at
-- Issues: [GitHub Issues]
-- Discussions: [GitHub Discussions]
+---
 
-**Last Updated**: February 11, 2026
+## Overview
+
+This repository contains the full experimental pipeline for a thesis on **resource-aware, multi-horizon, multivariate time-series forecasting**. The focus is not just raw prediction accuracy, but the trade-off between:
+
+- predictive performance,
+- computational cost,
+- inference latency, and
+- rule-based plausibility correction.
+
+The codebase includes:
+
+- data preparation and feature engineering,
+- dCeNN + ELM forecasting pipelines,
+- CNN and LSTM baselines,
+- ASP-based post-processing for energy and weather tasks,
+- benchmark aggregation,
+- ranking, Pareto analysis, and plotting utilities.
+
+---
+
+## What this repository predicts
+
+### Energy task
+The current **energy configuration** predicts a **single target**:
+
+- `load_mw`
+
+The energy pipeline uses calendar features plus four weather drivers:
+
+- `temperature_2m_C`
+- `precipitation_mm`
+- `mean_global_radiation`
+- `mean_wind_speed`
+
+### Weather task
+The current **weather configuration** predicts four targets:
+
+- `temperature_2m_C`
+- `precipitation_mm`
+- `mean_global_radiation`
+- `mean_wind_speed`
+
+So this repository is **not** the old total-energy setup from the reference repo. It has been adapted to the new dataset and task definitions used in this thesis.
+
+---
+
+## Architecture overview
+
+```text
+Raw CSV data + Austrian holiday calendar
+                │
+                ▼
+┌──────────────────────────────────────────────┐
+│ 01 · Data preparation / feature engineering  │
+│    scripts/prepare_data.py                   │
+│    src/dataio/*                              │
+└───────────────────────┬──────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 02 · dCeNN encoder training                  │
+│    scripts/run_energy_full.py                │
+│    scripts/run_weather_full.py               │
+│    src/models/dcenn.py                       │
+└───────────────────────┬──────────────────────┘
+                        │ latent representation
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 03 · ELM forecasting head                    │
+│    ELM weights / deployment payload saved    │
+│    as .npz / .pt artifacts                   │
+└───────────────────────┬──────────────────────┘
+                        │ raw predictions
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 04 · ASP symbolic repair / plausibility      │
+│    scripts/run_energy_asp.py                 │
+│    scripts/run_weather_asp.py                │
+│    src/asp/*.lp                              │
+└───────────────────────┬──────────────────────┘
+                        │ repaired predictions
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 05 · Evaluation / benchmarking / plots       │
+│    scripts/run_eval.py                       │
+│    scripts/collect_benchmarks.py             │
+│    scripts/make_benchmark_table.py           │
+│    scripts/plot_pareto.py                    │
+│    scripts/rank_and_plot_benchmarks.py       │
+└──────────────────────────────────────────────┘
+```
+
+---
+
+## Repository structure
+
+```text
+thesis_forecasting_new_dataset/
+├── configs/
+│   ├── default.yaml
+│   ├── energy_full.yaml
+│   └── weather_full.yaml
+│
+├── data/
+│   ├── raw/
+│   │   ├── gen_dataset.csv
+│   │   └── weather_data_15min.csv
+│   ├── processed/
+│   ├── interim/
+│   ├── interim_energy_full/
+│   ├── interim_weather_full/
+│   └── AT_public_holidays_2020_2025.csv
+│
+├── src/
+│   ├── asp/
+│   │   ├── batch_facts.lp
+│   │   ├── core_asp.lp
+│   │   ├── energy_physics.lp
+│   │   ├── weather_physics.lp
+│   │   └── related ASP programs
+│   ├── dataio/
+│   ├── eval/
+│   ├── inference/
+│   ├── models/
+│   ├── train/
+│   └── utils/
+│
+├── scripts/
+│   ├── prepare_data.py
+│   ├── run_energy_full.py
+│   ├── run_weather_full.py
+│   ├── run_energy_asp.py
+│   ├── run_weather_asp.py
+│   ├── run_cnn_baseline.py
+│   ├── run_lstm_baseline.py
+│   ├── run_eval.py
+│   ├── collect_benchmarks.py
+│   ├── make_benchmark_table.py
+│   ├── plot_pareto.py
+│   ├── rank_and_plot_benchmarks.py
+│   ├── cnn_lstm_visualize.py
+│   └── dcenn_visualize.py
+│
+├── outputs/
+│   ├── predictions/
+│   └── eval/
+│
+├── outputs_weather_full/
+├── artifacts_cnn_baseline/
+├── artifacts_lstm_baseline/
+├── thesis_plots_final_15min/
+│   └── COMPARE_ALL/
+│
+├── benchmarks_master.csv
+├── benchmark_table_rmse_ratio.csv
+├── benchmark_table_latency_ms.csv
+├── benchmark_winners_rmse_ratio.csv
+├── benchmark_pareto_all.png
+├── pareto_points.png
+├── rank_compute_latency.png
+├── rank_compute_only.png
+├── rank_latency.png
+├── rank_overall.png
+└── model_ranking_with_compute_latency.csv
+```
+
+---
+
+## Dataset and files
+
+The repository expects the main raw inputs in:
+
+- `data/raw/gen_dataset.csv`
+- `data/raw/weather_data_15min.csv`
+- `data/AT_public_holidays_2020_2025.csv`
+
+The current configs indicate a **15-minute time resolution** and use `Time (UTC)` as the timestamp column.
+
+### Current task definitions from config
+
+**Energy task**
+- Input features include cyclical time features, holiday indicators, weather variables, and `load_mw`
+- Target features: `load_mw`
+
+**Weather task**
+- Target features:
+  - `temperature_2m_C`
+  - `precipitation_mm`
+  - `mean_global_radiation`
+  - `mean_wind_speed`
+
+---
+
+## Train / validation / test split
+
+Both `energy_full.yaml` and `weather_full.yaml` use the following split boundaries:
+
+- **Train until:** `2024-06-30 23:45:00`
+- **Validation until:** `2024-09-30 23:45:00`
+- **Test until:** `2024-12-31 23:45:00`
+
+This keeps the evaluation temporally clean and consistent across models.
+
+---
+
+## Models and symbolic layer
+
+### 1) dCeNN + ELM
+The main proposed method is a hybrid pipeline where:
+
+- **dCeNN** acts as the representation learner / encoder,
+- **ELM** provides fast forecasting on top of the learned latent space,
+- deployment artifacts are saved separately from training artifacts,
+- parameter counts, model size, CPU time, latency, and peak RAM are tracked for thesis-grade benchmarking.
+
+### 2) Baselines
+Two neural baselines are included for fair comparison:
+
+- **CNN / TCN baseline**
+- **LSTM baseline**
+
+These baseline runs are stored under:
+
+- `artifacts_cnn_baseline/`
+- `artifacts_lstm_baseline/`
+
+### 3) ASP repair layer
+The symbolic post-processing stage applies logic rules from:
+
+- `src/asp/energy_physics.lp`
+- `src/asp/weather_physics.lp`
+- related ASP support files in `src/asp/`
+
+This layer is used to repair or flag raw predictions that violate domain constraints.
+
+---
+
+## How to run the code
+
+### 1. Clone and install
+```bash
+git clone https://github.com/binurawidanagama/thesis_forecasting_new_dataset.git
+cd thesis_forecasting_new_dataset
+python -m venv .venv
+source .venv/bin/activate   # Linux / macOS
+# .venv\Scripts\activate    # Windows
+pip install -r requirements.txt
+export PYTHONPATH=$PWD      # Linux / macOS
+# set PYTHONPATH=%CD%       # Windows CMD
+```
+
+### 2. Make sure the raw files are in place
+Place the dataset files in:
+
+```text
+data/raw/gen_dataset.csv
+data/raw/weather_data_15min.csv
+data/AT_public_holidays_2020_2025.csv
+```
+
+### 3. Run the proposed dCeNN + ELM pipeline
+Example energy runs:
+
+```bash
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 96 --horizon 12
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 96 --horizon 24
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 96 --horizon 72
+```
+
+Example weather runs:
+
+```bash
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 96 --horizon 12
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 96 --horizon 24
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 96 --horizon 72
+```
+
+You can repeat the same pattern for the other thesis settings, typically using:
+
+- lookbacks: `96`, `288`, `672`
+- horizons: `12`, `24`, `72`
+
+### 4. Apply ASP post-processing
+```bash
+python scripts/run_energy_asp.py --config configs/energy_full.yaml --lookback 96 --horizon 12
+python scripts/run_weather_asp.py --config configs/weather_full.yaml --lookback 96 --horizon 12
+```
+
+### 5. Run baseline models
+```bash
+python scripts/run_cnn_baseline.py
+python scripts/run_lstm_baseline.py
+```
+
+### 6. Aggregate benchmark results
+```bash
+python scripts/collect_benchmarks.py
+python scripts/make_benchmark_table.py
+python scripts/plot_pareto.py
+python scripts/rank_and_plot_benchmarks.py
+```
+
+### 7. Visualise forecast trajectories
+```bash
+python scripts/cnn_lstm_visualize.py
+python scripts/dcenn_visualize.py
+```
+
+---
+
+## Benchmarking and visualisation
+
+The repository already includes consolidated benchmark outputs such as:
+
+- `benchmarks_master.csv`
+- `benchmark_table_rmse_ratio.csv`
+- `benchmark_table_latency_ms.csv`
+- `benchmark_winners_rmse_ratio.csv`
+- `model_ranking_with_compute_latency.csv`
+- `benchmark_pareto_all.png`
+- `pareto_points.png`
+- `rank_compute_latency.png`
+- `rank_compute_only.png`
+- `rank_latency.png`
+- `rank_overall.png`
+
+The benchmark scripts compare models on:
+
+- **accuracy** (MAE, RMSE, sMAPE, RMSE ratio),
+- **training cost**,
+- **inference cost**,
+- **latency per sample**,
+- **peak RAM**, and
+- **deployable parameter count / artifact size**.
+
+The plotting utilities generate global ranking and Pareto-style views of the accuracy–efficiency trade-off.
+
+---
+
+## Outputs produced by the pipeline
+
+### General outputs
+The generic output folder contains:
+
+- `outputs/predictions/test_predictions.parquet`
+- `outputs/predictions/test_predictions_asp.parquet`
+- `outputs/eval/metrics_test.json`
+
+### Weather dCeNN outputs
+Each weather experiment folder such as `outputs_weather_full/LB96_H12/` contains artifacts including:
+
+- `base_metrics.json`
+- `dcenn_weather_deploy.pt`
+- `dcenn_weather_train.pt`
+- `elm_betas.npz`
+- `params_accounting.json`
+- `raw_weather.parquet`
+- `truth_weather.parquet`
+
+### Baseline outputs
+Baseline experiment artifacts are organised by lookback / horizon / task under:
+
+- `artifacts_cnn_baseline/`
+- `artifacts_lstm_baseline/`
+
+### Comparison plots
+Combined forecast comparison figures are stored under:
+
+- `thesis_plots_final_15min/COMPARE_ALL/`
+
+---
+
+## Notes on naming conventions
+
+This repository currently contains **two naming styles** for horizons / artifacts:
+
+1. **Canonical thesis benchmark labels** such as `12`, `24`, `72`
+2. **Legacy 15-minute-step style folders** such as `H48`, `H96`, `H288`
+
+That means you may see older artifact folders like:
+
+- `artifacts_cnn_baseline_48_96_288H/`
+
+alongside the current consolidated benchmark tables that use the cleaner thesis labels.
+
+In plain English: the repo has a little naming archaeology in it. The pipeline is still usable, but the README should acknowledge the fossils instead of pretending they are decorative pottery.
+
+---
+
+## Dependencies
+
+The current `requirements.txt` lists:
+
+- `numpy`
+- `pandas`
+- `pyyaml`
+- `scikit-learn`
+- `tqdm`
+- `python-dateutil`
+- `pytz`
+- `joblib`
+- `pyarrow`
+- `holidays`
+- `clingo`
+
+`clingo` is required for the ASP reasoning layer.
+
+---
+
+## Thesis context
+
+This repository is intended for the comparative evaluation of:
+
+- **dCeNN + ELM** (raw)
+- **dCeNN + ELM + ASP** (repaired / constrained)
+- **CNN baseline**
+- **LSTM baseline**
+
+across multi-horizon forecasting settings on Austrian weather and energy data under resource constraints.
+
+The emphasis is on a **reproducible end-to-end research workflow**: from raw CSV ingestion, to forecasting, to symbolic repair, to benchmark aggregation and thesis-ready plots / tables.
+
+---
+
+## Suggested citation / description
+
+If you need a short repository description for GitHub, this works well:
+
+> Thesis repository for 15-minute Austrian weather and load forecasting using a hybrid dCeNN-ELM-ASP pipeline, benchmarked against CNN and LSTM baselines with accuracy, latency, and compute-aware evaluation.
