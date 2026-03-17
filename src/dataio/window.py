@@ -4,7 +4,7 @@ from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from .preprocess import build_master
 
-def make_windows(df, feature_cols, target_cols, context=168, horizon=12, critical_cols=None):
+def make_windows(df, feature_cols, target_cols, context, horizon, critical_cols=None):
     """
     Build windows; reject a window only if CRITICAL columns contain NaNs.
     Returns:
@@ -60,6 +60,7 @@ def make_windows(df, feature_cols, target_cols, context=168, horizon=12, critica
     
     return X_dcenn, Y, pd.DatetimeIndex(idx)
 
+
 def cache_dcenn_windows(cfg):
     """
     Build or load cached dCeNN windows.
@@ -68,19 +69,12 @@ def cache_dcenn_windows(cfg):
     paths = cfg["paths"]
     npz_path = Path(paths.get("windows_npz", "data/interim/windows_dcenn.npz"))
     
-    # TEMPORARY: Keep rebuild=True until validation passes
+    # Set to False to load from cache if it already exists, True to force rebuild
     rebuild = True 
 
-    feature_cols = [
-        "hour_sin", "hour_cos", "dow_sin", "dow_cos", "month_sin", "month_cos",
-        "holiday",
-        "cap_wind_mw", "cap_solar_mw",
-        "wind_mw", "solar_mw", "load_mw", "price_eur_mwh",
-        "temperature_2m_C", "relative_humidity_2m_pct", "wind_speed_100m (m/s)",
-        "surface_pressure_hPa", "precipitation_mm", "shortwave_radiation_Wm2",
-        "air_density_kgm3", "pv_proxy", "wind_power_proxy",
-    ]
-    target_cols = ["cf_wind", "cf_solar", "load_mw", "price_eur_mwh"]
+    # DYNAMIC: Read inputs and targets directly from the YAML config
+    feature_cols = cfg["features"]["input_features"]
+    target_cols = cfg["features"]["target_features"]
     
     ctx = cfg["features"]["context_hours"]
     hz  = cfg["features"]["horizon_hours"]
@@ -102,18 +96,13 @@ def cache_dcenn_windows(cfg):
     val_df_scaled   = val_df_raw.copy()
     test_df_scaled  = test_df_raw.copy()
     
-    # Fit scaler only on training inputs
+    # Fit scaler only on training inputs to prevent data leakage
     train_df_scaled[feature_cols] = scaler.fit_transform(train_df_scaled[feature_cols])
     val_df_scaled[feature_cols]   = scaler.transform(val_df_scaled[feature_cols])
     test_df_scaled[feature_cols]  = scaler.transform(test_df_scaled[feature_cols])
 
     # --- 2. Generate Windows ---
-    # CRITICAL: 
-    # Get X from the SCALED dataframe (normalized inputs for Neural Net)
-    # Get Y from the RAW dataframe (actual MW/Euros for ground truth)
-    
     def get_xy(df_scaled, df_raw):
-        # We run make_windows twice. 
         # Pass 1: Get Scaled X (ignore Y)
         X_s, _, idx = make_windows(df_scaled, feature_cols, target_cols, ctx, hz)
         # Pass 2: Get Raw Y (ignore X)
@@ -136,5 +125,5 @@ def cache_dcenn_windows(cfg):
         Xva=Xva, Yva=Yva,
         Xte=Xte, Yte=Yte,
     )
-    print(f"[cache] Saved new windows to {npz_path}")
+    print(f"[cache] Saved new windows to {npz_path}. Shapes: Xtr={Xtr.shape}, Ytr={Ytr.shape}")
     return Xtr, Ytr, Xva, Yva, Xte, Yte

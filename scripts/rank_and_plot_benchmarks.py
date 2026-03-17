@@ -193,7 +193,7 @@ def main():
 
     # guard grid if you want
     if "lookback" in df.columns:
-        df = df[df["lookback"].isin([24, 72, 168])]
+        df = df[df["lookback"].isin([96, 288, 672])]
     if "horizon" in df.columns:
         df = df[df["horizon"].isin([12, 24, 72])]
 

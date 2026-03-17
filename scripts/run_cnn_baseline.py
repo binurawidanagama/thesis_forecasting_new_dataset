@@ -12,22 +12,20 @@ DESCRIPTION:
   - Robust inverse scaling using the SAME scaler (feature-wise)
   - Correct timestamp alignment for saved predictions (hard assert)
   - Predictions saved in WIDE format for compatibility with plotting scripts
-  - Full benchmarking:
-      * Accuracy: MAE, RMSE, sMAPE
-      * Baseline: Persistence MAE, RMSE, sMAPE
-      * Efficiency: Params, Train_Wall_Sec, Train_CPU_Sec, Avg_CPU_Usage_Pct,
-                    Peak_RAM_MB, Infer_Wall_Sec, Infer_CPU_Sec, Infer_Avg_CPU_Pct,
-                    Latency_ms_per_sample, Size_MB
+  - INCREMENTAL SAVING: Saves the summary CSV after every horizon finishes!
 
 USAGE:
-  python scripts/run_cnn_baseline.py --lookback 24
-  python scripts/run_cnn_baseline.py --lookback 72
-  python scripts/run_cnn_baseline.py --lookback 168
+  python scripts/run_cnn_baseline.py --lookback 96 --horizon 12
+  python scripts/run_cnn_baseline.py --lookback 96 --horizon 24
+  python scripts/run_cnn_baseline.py --lookback 96 --horizon 72
 
-OUTPUTS:
-  - artifacts_cnn_baseline/summary_lb{lookback}.csv
-  - artifacts_cnn_baseline/LB{lookback}_H{horizon}_{task}/preds.parquet
-    (ALL horizon steps saved in WIDE format)
+  python scripts/run_cnn_baseline.py --lookback 288 --horizon 12
+  python scripts/run_cnn_baseline.py --lookback 288 --horizon 24
+  python scripts/run_cnn_baseline.py --lookback 288 --horizon 72
+
+  python scripts/run_cnn_baseline.py --lookback 672 --horizon 12
+  python scripts/run_cnn_baseline.py --lookback 672 --horizon 24
+  python scripts/run_cnn_baseline.py --lookback 672 --horizon 72
 ------------------------------------------------------------------------------
 """
 
@@ -55,6 +53,30 @@ except Exception:
 
 
 # ---------------------------
+# Bench headers
+# ---------------------------
+BASE_HEADER = [
+    "task", "lookback", "horizon",
+    "MAE", "RMSE", "sMAPE",
+    "BASE_MAE", "BASE_RMSE", "BASE_sMAPE",
+    "Params",
+    "Train_Wall_Sec", "Train_CPU_Sec", "Avg_CPU_Usage_Pct",
+    "Peak_RAM_MB",
+    "Infer_Wall_Sec", "Infer_CPU_Sec", "Infer_Avg_CPU_Pct",
+    "Latency_ms_per_sample",
+    "Size_MB"
+]
+
+EXTRA_HEADER = [
+    "Train_Params",
+    "Deploy_Params",
+    "Train_Size_MB",
+    "Deploy_Size_MB"
+]
+
+HEADER_V2 = BASE_HEADER + EXTRA_HEADER
+
+# ---------------------------
 # Config
 # ---------------------------
 @dataclass
@@ -63,10 +85,10 @@ class ExpConfig:
     time_col: str = "Time (UTC)"
     out_root: str = "artifacts_cnn_baseline"
 
-    # Strict Date Splits (Matches dCeNN Default.yaml)
-    train_until: str = "2020-12-31 23:00:00"
-    val_until:   str = "2021-12-31 23:00:00"
-    test_until:  str = "2022-12-31 23:00:00"
+    # Strict Date Splits (Matches your new 15-min dataset)
+    train_until: str = "2024-06-30 23:45:00"
+    val_until:   str = "2024-09-30 23:45:00"
+    test_until:  str = "2024-12-31 23:45:00"
 
     # CNN/TCN Settings (CPU-friendly)
     batch_size: int = 128
@@ -82,17 +104,14 @@ class ExpConfig:
 
     # Resource sampling
     ram_sample_every_n_batches: int = 10
-    infer_ram_sample_every_n_batches: int = 25  # optional inference RAM sampling cadence (0 disables)
+    infer_ram_sample_every_n_batches: int = 25 
 
 
 # ---------------------------
 # Process Metrics (CPU seconds + RAM MB)
 # ---------------------------
 def get_process_metrics():
-    """
-    Returns (ram_mb, cpu_time_s) for this process.
-    cpu_time_s = user + system CPU seconds (cumulative, all threads).
-    """
+    """Returns (ram_mb, cpu_time_s) for this process."""
     if not _HAS_PSUTIL:
         return float("nan"), float("nan")
     p = psutil.Process(os.getpid())
@@ -104,15 +123,11 @@ def get_process_metrics():
 
 
 def _nanmax(*vals: float) -> float:
-    """max that ignores NaNs; returns NaN if all are NaN."""
     good = [v for v in vals if np.isfinite(v)]
     return float(max(good)) if good else float("nan")
 
 
 class ResourceMonitor(tf.keras.callbacks.Callback):
-    """
-    Samples RAM during training to estimate true peak RAM (process RSS).
-    """
     def __init__(self, sample_every_n_batches: int = 10):
         super().__init__()
         self.sample_every_n_batches = max(1, int(sample_every_n_batches))
@@ -149,19 +164,14 @@ def set_seeds(seed: int) -> None:
 
 
 def load_data(cfg: ExpConfig) -> pd.DataFrame:
-    """Loads CSV, standardizes names, parses UTC datetime index, keeps numeric+bool."""
     if not os.path.exists(cfg.csv_path):
         raise FileNotFoundError(f"CSV not found at: {cfg.csv_path}")
 
     df = pd.read_csv(cfg.csv_path)
 
+    # Clean up standard naming conventions just in case
     rename_map = {
         "Actual_Load_MW": "load_mw",
-        "Solar_MW": "solar_mw",
-        "Wind_MW": "wind_mw",
-        "Price_EUR_MWh": "price_eur_mwh",
-        "Wind_Cap_MW": "cap_wind_mw",
-        "Solar_Cap_MW": "cap_solar_mw",
     }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
@@ -170,7 +180,7 @@ def load_data(cfg: ExpConfig) -> pd.DataFrame:
         if cands:
             cfg.time_col = cands[0]
         else:
-            raise ValueError(f"time_col '{cfg.time_col}' not found, and no time-like column detected.")
+            raise ValueError(f"time_col '{cfg.time_col}' not found.")
 
     df[cfg.time_col] = pd.to_datetime(df[cfg.time_col], utc=True, errors="coerce")
     df = df.dropna(subset=[cfg.time_col]).sort_values(cfg.time_col).set_index(cfg.time_col)
@@ -183,7 +193,6 @@ def load_data(cfg: ExpConfig) -> pd.DataFrame:
 
 
 def get_indices_by_date(df: pd.DataFrame, cfg: ExpConfig):
-    """Inclusive split indices via side='right' in UTC."""
     train_end = pd.Timestamp(cfg.train_until).tz_localize("UTC")
     val_end   = pd.Timestamp(cfg.val_until).tz_localize("UTC")
     test_end  = pd.Timestamp(cfg.test_until).tz_localize("UTC")
@@ -207,20 +216,7 @@ def fit_scaler(train_2d: np.ndarray) -> StandardScaler:
     return sc
 
 
-def make_ds(
-    block: np.ndarray,
-    lookback: int,
-    horizon: int,
-    batch_size: int,
-    target_indices: np.ndarray,
-    shuffle: bool = True,
-    stride: int = 1,
-):
-    """
-    Dataset:
-      X: [B, lookback, n_features]
-      Y: [B, horizon, n_targets]
-    """
+def make_ds(block: np.ndarray, lookback: int, horizon: int, batch_size: int, target_indices: np.ndarray, shuffle: bool = True, stride: int = 1):
     total = lookback + horizon
     if len(block) < total:
         return None
@@ -249,7 +245,6 @@ def make_ds(
 # Scaling + Metrics
 # ---------------------------
 def inverse_transform_targets(y_scaled: np.ndarray, scaler: StandardScaler, target_indices: np.ndarray) -> np.ndarray:
-    """Robust inverse scaling for both 2D and 3D arrays."""
     scale = scaler.scale_[target_indices].astype(np.float32)
     mean  = scaler.mean_[target_indices].astype(np.float32)
 
@@ -269,11 +264,6 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray):
 
 
 def persistence_baseline_from_inputs(x_scaled: np.ndarray, target_indices: np.ndarray, horizon: int) -> np.ndarray:
-    """
-    Persistence baseline: predict future = last observed target value in input window.
-    x_scaled: [N, lookback, n_features]
-    returns:  [N, horizon, n_targets]
-    """
     last_step = x_scaled[:, -1, :]
     last_targets = last_step[:, target_indices]
     return np.repeat(last_targets[:, None, :], repeats=horizon, axis=1)
@@ -316,30 +306,9 @@ def build_model(lb: int, hz: int, n_in_feats: int, n_out_feats: int, cfg: ExpCon
 # ---------------------------
 # Save Preds
 # ---------------------------
-def save_preds_parquet(
-    y_pred_inv: np.ndarray,
-    y_true_inv: np.ndarray,
-    cols,
-    base_timestamps,
-    out_path: str,
-) -> None:
-    """
-    Save ALL horizon steps in WIDE format.
-
-    Semantics:
-      - One row = one forecast window
-      - 'timestamp' = target timestamp for horizon step h1
-      - Columns are named:
-            True_<col>+h1, Pred_<col>+h1, ... True_<col>+hH, Pred_<col>+hH
-
-    Backward-compatibility aliases:
-            True_<col>, Pred_<col>
-      are also saved as h1.
-    """
+def save_preds_parquet(y_pred_inv: np.ndarray, y_true_inv: np.ndarray, cols, base_timestamps, out_path: str) -> None:
     if y_pred_inv.ndim != 3 or y_true_inv.ndim != 3:
-        raise ValueError(
-            f"Expected 3D arrays [N, H, C], got pred={y_pred_inv.shape}, true={y_true_inv.shape}"
-        )
+        raise ValueError(f"Expected 3D arrays [N, H, C], got pred={y_pred_inv.shape}, true={y_true_inv.shape}")
 
     n_samples, horizon, n_targets = y_pred_inv.shape
 
@@ -351,15 +320,12 @@ def save_preds_parquet(
         raise ValueError(f"TS/pred mismatch: {len(base_timestamps)} vs {n_samples}")
 
     base_timestamps = pd.to_datetime(base_timestamps, utc=True)
-
     data = {"timestamp": base_timestamps}
 
     for i, c in enumerate(cols):
-        # Backward-compatible aliases for h1
         data[f"True_{c}"] = y_true_inv[:, 0, i]
         data[f"Pred_{c}"] = y_pred_inv[:, 0, i]
 
-        # Full horizon columns
         for h in range(horizon):
             h_label = h + 1
             data[f"True_{c}+h{h_label}"] = y_true_inv[:, h, i]
@@ -369,10 +335,25 @@ def save_preds_parquet(
     out_df.to_parquet(out_path, index=False)
 
 
+def append_row_schema_safe(summary_csv: str, row_dict: dict):
+    df_row = pd.DataFrame([[row_dict.get(h, np.nan) for h in HEADER_V2]], columns=HEADER_V2)
+
+    if os.path.exists(summary_csv):
+        df_existing = pd.read_csv(summary_csv)
+        for col in HEADER_V2:
+            if col not in df_existing.columns:
+                df_existing[col] = np.nan
+        df_existing = df_existing[HEADER_V2]
+        df_final = pd.concat([df_existing, df_row], ignore_index=True)
+        df_final.to_csv(summary_csv, index=False)
+    else:
+        df_row.to_csv(summary_csv, index=False)
+
+
 # ---------------------------
 # Runner
 # ---------------------------
-def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
+def run_specific_lookback(lookback: int, cfg: ExpConfig, target_horizon: int = None) -> None:
     print(f"\n[START] CNN/TCN baseline | Lookback={lookback}")
     set_seeds(cfg.seed)
 
@@ -382,37 +363,46 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
     tr_idx, va_idx, te_idx = get_indices_by_date(df, cfg)
     print(f"Split indices: Train={tr_idx}, Val={va_idx}, Test={te_idx} (len={len(df)})")
 
-    POTENTIAL_DRIVERS = ["hour_sin", "hour_cos", "month_sin", "month_cos", "is_weekend", "is_public_holiday"]
+    # UPDATE 1: Scaled to 15-min interval flags
+    POTENTIAL_DRIVERS = [
+        "hour_sin", "hour_cos", "dow_sin", "dow_cos", 
+        "month_sin", "month_cos", "is_weekend", 
+        "is_public_holiday", "is_special_day"
+    ]
     drivers = [c for c in POTENTIAL_DRIVERS if c in df.columns]
 
+    # UPDATE 2: New feature/target mappings for Energy and Weather
     tasks = {
         "ENERGY": {
-            "targets": ["load_mw", "solar_mw", "wind_mw"],
+            "targets": ["load_mw"],
             "features": [
-                "load_mw", "solar_mw", "wind_mw",
-                "temperature_2m_C", "shortwave_radiation_Wm2",
-                "wind_speed_100m (m/s)", "precipitation_mm",
+                "load_mw", 
+                "temperature_2m_C", "precipitation_mm", 
+                "mean_global_radiation", "mean_wind_speed"
             ] + drivers,
         },
         "WEATHER": {
             "targets": [
-                "temperature_2m_C", "shortwave_radiation_Wm2",
-                "relative_humidity_2m_pct", "precipitation_mm",
-                "wind_speed_100m (m/s)", "surface_pressure_hPa",
+                "temperature_2m_C", "precipitation_mm", 
+                "mean_global_radiation", "mean_wind_speed"
             ],
             "features": [
-                "temperature_2m_C", "shortwave_radiation_Wm2",
-                "relative_humidity_2m_pct", "precipitation_mm",
-                "wind_speed_100m (m/s)", "surface_pressure_hPa",
+                "temperature_2m_C", "precipitation_mm", 
+                "mean_global_radiation", "mean_wind_speed"
             ] + drivers,
         },
     }
 
-    horizons = [12, 24, 72]
+    # UPDATE 3: 15-minute scaled horizons (12h, 24h, 72h)
+    horizons = [48, 96, 288]
+    
+    if target_horizon is not None:
+        horizons = [target_horizon]
+        
     results = []
 
     if not _HAS_PSUTIL:
-        print("[WARN] psutil not installed -> CPU/RAM benchmarking will be NaN. Install with: pip install psutil")
+        print("[WARN] psutil not installed -> CPU/RAM benchmarking will be NaN.")
 
     for task_name, spec in tasks.items():
         feat_cols = spec["features"]
@@ -455,7 +445,6 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             cb = [tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=4, restore_best_weights=True)]
             resmon = ResourceMonitor(sample_every_n_batches=cfg.ram_sample_every_n_batches)
 
-            # --- TRAIN BENCHMARK (Wall + CPU seconds + Peak RAM training) ---
             train_start_ram, train_start_cpu = get_process_metrics()
             t0 = time.time()
             model.fit(tr_ds, validation_data=va_ds, epochs=cfg.epochs, callbacks=cb + [resmon], verbose=1)
@@ -465,11 +454,9 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             train_cpu = float(train_end_cpu - train_start_cpu) if np.isfinite(train_start_cpu) and np.isfinite(train_end_cpu) else float("nan")
             avg_cpu_pct = float((train_cpu / train_wall) * 100.0) if (train_wall > 0 and np.isfinite(train_cpu)) else float("nan")
 
-            # Start with best estimate from training callback + endpoints
             peak_ram = _nanmax(resmon.peak_ram_mb, train_start_ram, train_end_ram)
 
-            # --- INFERENCE BENCHMARK (Wall + CPU seconds + RAM endpoints + optional sampling) ---
-            _ = model.predict(te_ds.take(1), verbose=0)  # warmup
+            _ = model.predict(te_ds.take(1), verbose=0)
 
             inf_start_ram, inf_start_cpu = get_process_metrics()
             t0 = time.time()
@@ -498,28 +485,22 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             infer_cpu = float(inf_end_cpu - inf_start_cpu) if np.isfinite(inf_start_cpu) and np.isfinite(inf_end_cpu) else float("nan")
             infer_avg_cpu_pct = float((infer_cpu / infer_wall) * 100.0) if (infer_wall > 0 and np.isfinite(infer_cpu)) else float("nan")
 
-            # END-TO-END Peak RAM (train + inference)
             peak_ram = _nanmax(peak_ram, inf_start_ram, inf_end_ram, infer_peak_ram)
 
-            # True scaled values
             y_true_scaled = np.concatenate([y for _, y in te_ds], axis=0)
 
-            # Inverse scale for metrics
             pred_inv = inverse_transform_targets(y_pred_scaled, scaler, target_indices)
             true_inv = inverse_transform_targets(y_true_scaled, scaler, target_indices)
             mae, rmse, smape = calculate_metrics(true_inv, pred_inv)
 
-            # Persistence baseline
             x_all = np.concatenate([x for x, _ in te_ds], axis=0)
             base_scaled = persistence_baseline_from_inputs(x_all, target_indices, horizon=horizon)
             base_inv = inverse_transform_targets(base_scaled, scaler, target_indices)
             base_mae, base_rmse, base_smape = calculate_metrics(true_inv, base_inv)
 
-            # Latency (ms/sample) per forecast window
             n_samples = int(pred_inv.shape[0])
             latency_ms = float((infer_wall * 1000.0) / max(1, n_samples))
 
-            # Model size (no optimizer), unique temp name to avoid collisions
             temp_name = f"temp_{task_name}_lb{lookback}_h{horizon}_{os.getpid()}_{int(time.time()*1e6)}.keras"
             model_path = os.path.join(cfg.out_root, temp_name)
             model.save(model_path, include_optimizer=False)
@@ -529,8 +510,6 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             except OSError:
                 pass
 
-            # Timestamp alignment:
-            # base timestamp corresponds to horizon step h1
             test_start_idx = max(0, va_idx - lookback)
             start_ts_idx = test_start_idx + lookback
             n_windows = len(test_blk) - (lookback + horizon) + 1
@@ -538,11 +517,9 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
 
             if len(ts) != n_samples:
                 raise AssertionError(
-                    f"TS/pred mismatch: TS={len(ts)} vs Pred={n_samples} | {task_name} LB={lookback} H={horizon} "
-                    f"(test_blk={len(test_blk)}, start_ts_idx={start_ts_idx})"
+                    f"TS/pred mismatch: TS={len(ts)} vs Pred={n_samples} | {task_name} LB={lookback} H={horizon}"
                 )
 
-            # Save all horizons in wide format
             out_dir = os.path.join(cfg.out_root, f"LB{lookback}_H{horizon}_{task_name}")
             os.makedirs(out_dir, exist_ok=True)
             save_preds_parquet(pred_inv, true_inv, target_cols, ts, os.path.join(out_dir, "preds.parquet"))
@@ -551,30 +528,24 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
                 "task": task_name,
                 "lookback": lookback,
                 "horizon": horizon,
-
                 "MAE": mae,
                 "RMSE": rmse,
                 "sMAPE": smape,
-
                 "BASE_MAE": base_mae,
                 "BASE_RMSE": base_rmse,
                 "BASE_sMAPE": base_smape,
-
                 "Params": n_params,
                 "Train_Params": n_params,
                 "Deploy_Params": n_params,
                 "Train_Size_MB": size_mb,
                 "Deploy_Size_MB": size_mb,
-
                 "Train_Wall_Sec": train_wall,
                 "Train_CPU_Sec": train_cpu,
                 "Avg_CPU_Usage_Pct": avg_cpu_pct,
                 "Peak_RAM_MB": peak_ram,
-
                 "Infer_Wall_Sec": infer_wall,
                 "Infer_CPU_Sec": infer_cpu,
                 "Infer_Avg_CPU_Pct": infer_avg_cpu_pct,
-
                 "Latency_ms_per_sample": latency_ms,
                 "Size_MB": size_mb,
             })
@@ -582,22 +553,26 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             print(
                 f"       [RES] MAE={mae:.4f} | BASE_MAE={base_mae:.4f} | "
                 f"Latency={latency_ms:.4f}ms | Size={size_mb:.2f}MB | "
-                f"CPU(avg)={avg_cpu_pct:.1f}% | RAM(peak_e2e)={peak_ram:.0f}MB"
+                f"CPU={avg_cpu_pct:.1f}% | RAM={peak_ram:.0f}MB"
             )
 
-            # Cleanup
+            # --- OOM CRASH PREVENTION (Garbage Collection) ---
             K.clear_session()
             del model
-            gc.collect()
+            del tr_ds, va_ds, te_ds  # Explicitly destroy the massive datasets
+            gc.collect()             # Force Python to clear RAM immediately
 
-    # Save Summary
-    summary_path = os.path.join(cfg.out_root, f"summary_lb{lookback}.csv")
-    pd.DataFrame(results).to_csv(summary_path, index=False)
-    print(f"\n[COMPLETE] Saved summary -> {summary_path}")
+            # --- SAFE INCREMENTAL SAVE ---
+            summary_path = os.path.join(cfg.out_root, f"summary_lb{lookback}.csv")
+            append_row_schema_safe(summary_path, results[-1])
+            
+    print(f"\n[COMPLETE] All tasks and horizons finished. Final summary -> {summary_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lookback", type=int, required=True, help="Lookback window size (e.g., 24, 72, 168)")
+    parser.add_argument("--lookback", type=int, required=True, help="Lookback window size (e.g., 48, 96, 672)")
+    parser.add_argument("--horizon", type=int, default=None, help="Specific horizon window size")
     args = parser.parse_args()
-    run_specific_lookback(args.lookback, ExpConfig())
+    
+    run_specific_lookback(args.lookback, ExpConfig(), args.horizon)

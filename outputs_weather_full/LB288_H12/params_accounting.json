@@ -1,0 +1,16 @@
+{
+  "Train_Params_encoder_plus_head": 326704,
+  "Deploy_Params_encoder_plus_elm_W_b_beta": 1475584,
+  "encoder_trainable_params": 320512,
+  "head_trainable_params": 6192,
+  "elm_in_dim": 128,
+  "elm_hidden": 2048,
+  "horizon": 12,
+  "num_targets": 4,
+  "targets": [
+    "temperature_2m_C",
+    "precipitation_mm",
+    "mean_global_radiation",
+    "mean_wind_speed"
+  ]
+}

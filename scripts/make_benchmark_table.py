@@ -14,7 +14,7 @@ def main():
     df = pd.read_csv(MASTER)
 
     # keep the known grid (optional safety)
-    df = df[df["lookback"].isin([24, 72, 168])]
+    df = df[df["lookback"].isin([96, 288, 672])]
     df = df[df["horizon"].isin([12, 24, 72])]
     df["task"] = df["task"].astype(str).str.upper()
 

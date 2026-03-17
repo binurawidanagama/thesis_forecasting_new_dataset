@@ -17,17 +17,19 @@ UPDATES (matches the ENERGY fixes for thesis-grade consistency):
 - Summary CSV auto-upgrades to include new columns if missing
 
 Examples:
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 24  --horizon 12
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 24  --horizon 24
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 24  --horizon 72
+export PYTHONPATH=$PWD
 
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 72  --horizon 12
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 72  --horizon 24
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 72  --horizon 72
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 96 --horizon 48
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 96 --horizon 96
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 96 --horizon 288
 
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 168 --horizon 12
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 168 --horizon 24
-python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 168 --horizon 72
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 288 --horizon 48
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 288 --horizon 96
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 288 --horizon 288
+
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 672 --horizon 48
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 672 --horizon 96
+python scripts/run_weather_full.py --config configs/weather_full.yaml --lookback 672 --horizon 288
 """
 
 import os

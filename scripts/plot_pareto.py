@@ -11,7 +11,7 @@ def main():
 
     # Filter to usable rows
     df = df.dropna(subset=["RMSE_ratio", "Latency_ms_per_sample", "task", "lookback", "horizon"])
-    df = df[df["lookback"].isin([24, 72, 168])]
+    df = df[df["lookback"].isin([96, 288, 672])]
     df = df[df["horizon"].isin([12, 24, 72])]
 
     # Clip ratios so one crazy run doesn't ruin the entire scale

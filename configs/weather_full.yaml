@@ -8,49 +8,42 @@ paths:
   outputs_dir: "outputs_weather_full"
   windows_npz: "data/interim_weather_full/windows.npz"
 
-# --- TIME SPLITS ---
+# --- TIME SPLITS (15-min dataset intersection) ---
 time:
   tz_output: "UTC"
   split:
-    train_until: "2020-12-31 23:00:00"
-    val_until:   "2021-12-31 23:00:00"
-    test_until:  "2022-12-31 23:00:00"
+    train_until: "2024-06-30 23:45:00"
+    val_until:   "2024-09-30 23:45:00"
+    test_until:  "2024-12-31 23:45:00"
 
 # --- COLUMN MAPPING ---
 columns:
   timestamp: "Time (UTC)"
-  wind_mw: "Wind_MW"
-  solar_mw: "Solar_MW"
-  load_mw: "Actual_Load_MW"
-  price_eur_mwh: "Price_EUR_MWh"
-  cf_wind: "CF_Wind"
-  cf_solar: "CF_Solar"
-  cap_wind_mw: "Wind_Cap_MW"
-  cap_solar_mw: "Solar_Cap_MW"
   holiday_flags: ["is_public_holiday","is_weekend","is_special_day"]
 
 # --- FEATURES ---
 features:
-  context_hours: 168
-  horizon_hours: 12
+  # 15-min intervals: 168 hours * 4 = 672
+  context_hours: 672
+  # 15-min intervals: 12 hours * 4 = 48
+  horizon_hours: 48
   
   # Input features (Drivers)
   input_features: [
-    "hour_sin", "hour_cos", "month_sin", "month_cos",
-    "temperature_2m_C", "relative_humidity_2m_pct",
-    "wind_speed_100m (m/s)", "surface_pressure_hPa", 
-    "shortwave_radiation_Wm2", "precipitation_mm"
+    "hour_sin", "hour_cos", "dow_sin", "dow_cos", "month_sin", "month_cos",
+    "holiday",
+    "temperature_2m_C", "precipitation_mm", "mean_global_radiation", "mean_wind_speed"
   ]
 
-  # --- NEW: Added Radiation and Precipitation to Targets ---
+  # Target features (What we are predicting!)
   target_features: [
     "temperature_2m_C", 
-    "relative_humidity_2m_pct",
-    "wind_speed_100m (m/s)", 
-    "surface_pressure_hPa",
-    "shortwave_radiation_Wm2",
-    "precipitation_mm"
+    "precipitation_mm",
+    "mean_global_radiation",
+    "mean_wind_speed"
   ]
+
+# ... Keep the rest of the file (training, elm, etc.) exactly as it is ...
 
 training:
   encoder:

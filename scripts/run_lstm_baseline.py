@@ -4,9 +4,17 @@ Runs ONE lookback configuration with full progress bars.
 Saves predictions for visualization.
 
 Usage:
-  python scripts/run_lstm_baseline.py --lookback 24
-  python scripts/run_lstm_baseline.py --lookback 72
-  python scripts/run_lstm_baseline.py --lookback 168
+  python scripts/run_lstm_baseline.py --lookback 96 --horizon 12
+  python scripts/run_lstm_baseline.py --lookback 96 --horizon 24
+  python scripts/run_lstm_baseline.py --lookback 96 --horizon 72
+
+  python scripts/run_lstm_baseline.py --lookback 288 --horizon 12
+  python scripts/run_lstm_baseline.py --lookback 288 --horizon 24
+  python scripts/run_lstm_baseline.py --lookback 288 --horizon 72
+
+  python scripts/run_lstm_baseline.py --lookback 672 --horizon 12
+  python scripts/run_lstm_baseline.py --lookback 672 --horizon 24
+  python scripts/run_lstm_baseline.py --lookback 672 --horizon 72
 
 Outputs:
   - artifacts_lstm_baseline/summary_lb{lookback}.csv
@@ -89,13 +97,13 @@ class ExpConfig:
     time_col: str = "Time (UTC)"
     out_root: str = "artifacts_lstm_baseline"
 
-    # Strict Date Splits (Matches your dCeNN configs)
-    train_until: str = "2020-12-31 23:00:00"
-    val_until:   str = "2021-12-31 23:00:00"
-    test_until:  str = "2022-12-31 23:00:00"
+    # Strict Date Splits (Matches 15-min dataset)
+    train_until: str = "2024-06-30 23:45:00"
+    val_until:   str = "2024-09-30 23:45:00"
+    test_until:  str = "2024-12-31 23:45:00"
 
     # LSTM Settings (CPU-friendly)
-    batch_size: int = 256
+    batch_size: int = 256  # Kept at 256 per request
     epochs: int = 20
     lstm_units: int = 128
     lstm_units_2: int = 64
@@ -170,7 +178,6 @@ def update_peak(peak: float, val: float) -> float:
 
 
 def load_data(cfg: ExpConfig) -> pd.DataFrame:
-    """Loads CSV, standardizes names, parses UTC datetime index, keeps numeric+bool."""
     if not os.path.exists(cfg.csv_path):
         raise FileNotFoundError(f"CSV not found at: {cfg.csv_path}")
 
@@ -178,11 +185,6 @@ def load_data(cfg: ExpConfig) -> pd.DataFrame:
 
     rename_map = {
         "Actual_Load_MW": "load_mw",
-        "Solar_MW": "solar_mw",
-        "Wind_MW": "wind_mw",
-        "Price_EUR_MWh": "price_eur_mwh",
-        "Wind_Cap_MW": "cap_wind_mw",
-        "Solar_Cap_MW": "cap_solar_mw",
     }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
@@ -204,7 +206,6 @@ def load_data(cfg: ExpConfig) -> pd.DataFrame:
 
 
 def get_indices_by_date(df: pd.DataFrame, cfg: ExpConfig):
-    """Inclusive split indices via side='right' in UTC."""
     train_end = pd.Timestamp(cfg.train_until).tz_localize("UTC")
     val_end   = pd.Timestamp(cfg.val_until).tz_localize("UTC")
     test_end  = pd.Timestamp(cfg.test_until).tz_localize("UTC")
@@ -238,11 +239,6 @@ def make_ds(
     stride: int = 1,
     cache: bool = False,
 ):
-    """
-    Dataset:
-      X: [batch, lookback, n_features]
-      Y: [batch, horizon, n_targets]   (targets are gathered from feature columns)
-    """
     total = lookback + horizon
     if len(block) < total:
         return None
@@ -275,7 +271,6 @@ def make_ds(
 # Scaling + Metrics
 # ---------------------------
 def inverse_transform_targets(y_scaled: np.ndarray, scaler: StandardScaler, target_indices: np.ndarray) -> np.ndarray:
-    """Inverse-transform ONLY the target columns using the *main* scaler's params."""
     scale = scaler.scale_[target_indices].astype(np.float32)
     mean  = scaler.mean_[target_indices].astype(np.float32)
 
@@ -295,9 +290,8 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray):
 
 
 def persistence_baseline_from_inputs(x_scaled: np.ndarray, target_indices: np.ndarray, horizon: int) -> np.ndarray:
-    """Persistence baseline: predict future = last observed target value in input window."""
-    last_step = x_scaled[:, -1, :]                   # [N, n_features]
-    last_targets = last_step[:, target_indices]      # [N, n_targets]
+    last_step = x_scaled[:, -1, :]                   
+    last_targets = last_step[:, target_indices]      
     return np.repeat(last_targets[:, None, :], repeats=horizon, axis=1)
 
 
@@ -335,23 +329,8 @@ def save_preds_parquet(
     base_timestamps,
     out_path: str,
 ):
-    """
-    Save ALL horizon steps in WIDE format.
-
-    Semantics:
-      - One row = one forecast window
-      - 'timestamp' = target timestamp for horizon step h1
-      - Columns are named:
-            True_<col>+h1, Pred_<col>+h1, ... True_<col>+hH, Pred_<col>+hH
-
-    Backward-compatibility aliases:
-            True_<col>, Pred_<col>
-      are also saved as h1.
-    """
     if y_pred_inv.ndim != 3 or y_true_inv.ndim != 3:
-        raise ValueError(
-            f"Expected 3D arrays [N, H, C], got pred={y_pred_inv.shape}, true={y_true_inv.shape}"
-        )
+        raise ValueError(f"Expected 3D arrays [N, H, C], got pred={y_pred_inv.shape}, true={y_true_inv.shape}")
 
     n_samples, horizon, n_targets = y_pred_inv.shape
 
@@ -367,11 +346,9 @@ def save_preds_parquet(
     data = {"timestamp": base_timestamps}
 
     for i, c in enumerate(cols):
-        # Backward-compatible aliases for h1
         data[f"True_{c}"] = y_true_inv[:, 0, i]
         data[f"Pred_{c}"] = y_pred_inv[:, 0, i]
 
-        # Full horizon columns
         for h in range(horizon):
             h_label = h + 1
             data[f"True_{c}+h{h_label}"] = y_true_inv[:, h, i]
@@ -381,7 +358,6 @@ def save_preds_parquet(
 
 
 def append_row_schema_safe(summary_csv: str, row_dict: dict):
-    """Auto-upgrade schema to HEADER_V2 and append."""
     df_row = pd.DataFrame([[row_dict.get(h, np.nan) for h in HEADER_V2]], columns=HEADER_V2)
 
     if os.path.exists(summary_csv):
@@ -399,7 +375,7 @@ def append_row_schema_safe(summary_csv: str, row_dict: dict):
 # ---------------------------
 # Runner
 # ---------------------------
-def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
+def run_specific_lookback(lookback: int, cfg: ExpConfig, target_horizon: int = None) -> None:
     print(f"\n[START] LSTM baseline | Lookback={lookback}")
     set_seeds(cfg.seed)
     os.makedirs(cfg.out_root, exist_ok=True)
@@ -414,36 +390,46 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
     if _PSUTIL_OK:
         print("[INFO] psutil enabled: CPU-seconds + peak RAM will be recorded.")
     else:
-        print("[WARN] psutil not available: CPU/RAM metrics will be NaN. Install with: pip install psutil")
+        print("[WARN] psutil not available: CPU/RAM metrics will be NaN.")
 
-    potential_drivers = ["hour_sin", "hour_cos", "month_sin", "month_cos", "is_weekend", "is_public_holiday"]
+    # UPDATE 1: Scaled to 15-min interval flags
+    potential_drivers = [
+        "hour_sin", "hour_cos", "dow_sin", "dow_cos", 
+        "month_sin", "month_cos", "is_weekend", 
+        "is_public_holiday", "is_special_day"
+    ]
     drivers = [c for c in potential_drivers if c in df.columns]
 
+    # UPDATE 2: New feature/target mappings for Energy and Weather
     tasks = {
         "ENERGY": {
-            "targets": ["load_mw", "solar_mw", "wind_mw"],
+            "targets": ["load_mw"],
             "features": [
-                "load_mw", "solar_mw", "wind_mw",
-                "temperature_2m_C", "shortwave_radiation_Wm2",
-                "wind_speed_100m (m/s)", "precipitation_mm",
+                "load_mw", 
+                "temperature_2m_C", "precipitation_mm", 
+                "mean_global_radiation", "mean_wind_speed"
             ] + drivers,
         },
         "WEATHER": {
             "targets": [
-                "temperature_2m_C", "shortwave_radiation_Wm2",
-                "relative_humidity_2m_pct", "precipitation_mm",
-                "wind_speed_100m (m/s)", "surface_pressure_hPa",
+                "temperature_2m_C", "precipitation_mm", 
+                "mean_global_radiation", "mean_wind_speed"
             ],
             "features": [
-                "temperature_2m_C", "shortwave_radiation_Wm2",
-                "relative_humidity_2m_pct", "precipitation_mm",
-                "wind_speed_100m (m/s)", "surface_pressure_hPa",
+                "temperature_2m_C", "precipitation_mm", 
+                "mean_global_radiation", "mean_wind_speed"
             ] + drivers,
         },
     }
 
-    horizons = [12, 24, 72]
+    # UPDATE 3: 15-minute scaled horizons (12h, 24h, 72h)
+    horizons = [48, 96, 288]
+    
+    if target_horizon is not None:
+        horizons = [target_horizon]
+        
     results = []
+    summary_path = os.path.join(cfg.out_root, f"summary_lb{lookback}.csv")
 
     for task_name, spec in tasks.items():
         feat_cols = spec["features"]
@@ -498,7 +484,7 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             peak_cb = PeakRAM(sample_every_n_batches=cfg.ram_sample_every_n_batches)
 
             # -----------------------
-            # TRAIN: wall + CPU + peak RAM
+            # TRAIN
             # -----------------------
             rss_a, cpu_a = get_process_metrics()
             peak_ram_mb = update_peak(peak_ram_mb, rss_a)
@@ -521,9 +507,9 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             avg_cpu_pct = safe_cpu_pct(train_cpu, train_wall)
 
             # -----------------------
-            # INFER: wall + CPU (+ update Peak_RAM_MB via max(start/end))
+            # INFER
             # -----------------------
-            _ = model.predict(te_ds.take(1), verbose=0)  # warmup (not timed)
+            _ = model.predict(te_ds.take(1), verbose=0)
 
             inf_rss0, inf_cpu0 = get_process_metrics()
             peak_ram_mb = update_peak(peak_ram_mb, inf_rss0)
@@ -561,7 +547,6 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             except OSError:
                 pass
 
-            # Timestamp alignment: timestamp corresponds to horizon step h1
             test_start_idx = max(0, va_idx - lookback)
             start_ts_idx = test_start_idx + lookback
             n_windows = len(test_blk) - (lookback + horizon) + 1
@@ -569,11 +554,9 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
 
             if len(ts) != n_samples:
                 raise AssertionError(
-                    f"TS/pred mismatch: TS={len(ts)} vs Pred={n_samples} | {task_name} LB={lookback} H={horizon} "
-                    f"(test_blk={len(test_blk)}, start_ts_idx={start_ts_idx})"
+                    f"TS/pred mismatch: TS={len(ts)} vs Pred={n_samples} | {task_name} LB={lookback} H={horizon}"
                 )
 
-            # Save preds parquet (all horizons, wide format)
             out_dir = os.path.join(cfg.out_root, f"LB{lookback}_H{horizon}_{task_name}")
             os.makedirs(out_dir, exist_ok=True)
             save_preds_parquet(pred_inv, true_inv, target_cols, ts, os.path.join(out_dir, "preds.parquet"))
@@ -586,7 +569,7 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             Params = int(Deploy_Params)
             Size_MB = float(Deploy_Size_MB)
 
-            Peak_RAM_MB = float(peak_ram_mb) if np.isfinite(peak_ram_mb) else float("nan")
+            Peak_RAM_MB_val = float(peak_ram_mb) if np.isfinite(peak_ram_mb) else float("nan")
 
             results.append({
                 "task": task_name,
@@ -607,7 +590,7 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
                 "Train_CPU_Sec": float(train_cpu),
                 "Avg_CPU_Usage_Pct": float(avg_cpu_pct),
 
-                "Peak_RAM_MB": float(Peak_RAM_MB),
+                "Peak_RAM_MB": float(Peak_RAM_MB_val),
 
                 "Infer_Wall_Sec": float(infer_wall),
                 "Infer_CPU_Sec": float(infer_cpu),
@@ -625,23 +608,25 @@ def run_specific_lookback(lookback: int, cfg: ExpConfig) -> None:
             print(
                 f"       [RES] MAE={mae:.4f} | BASE_MAE={base_mae:.4f} | "
                 f"Latency={latency_ms:.4f}ms | Size={size_mb:.2f}MB | "
-                f"CPU(train avg)={avg_cpu_pct:.1f}% | RAM(peak e2e)={Peak_RAM_MB:.0f}MB | Params={n_params}"
+                f"CPU={avg_cpu_pct:.1f}% | RAM={Peak_RAM_MB_val:.0f}MB"
             )
 
+            # --- OOM CRASH PREVENTION (Garbage Collection) ---
             K.clear_session()
             del model
-            gc.collect()
+            del tr_ds, va_ds, te_ds  # Explicitly destroy the massive datasets
+            gc.collect()             # Force Python to clear RAM immediately
 
-    summary_path = os.path.join(cfg.out_root, f"summary_lb{lookback}.csv")
-    for r in results:
-        append_row_schema_safe(summary_path, r)
+            # --- INCREMENTAL SAVE ---
+            append_row_schema_safe(summary_path, results[-1])
 
-    print(f"\n[COMPLETE] Saved/updated summary -> {summary_path}")
+    print(f"\n[COMPLETE] All tasks and horizons finished. Final summary -> {summary_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lookback", type=int, required=True, help="Lookback window size (e.g., 24, 72, 168)")
+    parser.add_argument("--lookback", type=int, required=True, help="Lookback window size (e.g., 48, 96, 672)")
+    parser.add_argument("--horizon", type=int, default=None, help="Specific horizon window size")
     args = parser.parse_args()
 
-    run_specific_lookback(args.lookback, ExpConfig())
+    run_specific_lookback(args.lookback, ExpConfig(), args.horizon)

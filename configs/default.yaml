@@ -1,13 +1,14 @@
 random_seed: 42
 # --- shim keys used by YOUR preprocess scripts ---
 data_path: "data"
-raw_hourly_csv: "data/raw/AT_hourly_MW_and_Price.csv"
-capacity_csv: "data/raw/Installed Capacity per Production Type_201701010000-202301010000.csv"
-holidays_csv: "data/AT_public_holidays_2017_2022.csv"
+# Add your new raw files here:
+raw_weather_csv: "data/raw/weather_data_15min.csv" 
+raw_energy_csv: "data/raw/gen_dataset.csv"
+holidays_csv: "data/AT_public_holidays_2020_2025.csv"
 engineered_csv: "data/processed/AT_engineered.csv"
 
 paths:
-  engineered_csv: "data/processed/AT_engineered.csv"   # <- output of 01_preprocess_build_features.py
+  engineered_csv: "data/processed/AT_engineered.csv"
   interim_dir: "data/interim"
   processed_dir: "data/processed"
   checkpoints_dir: "checkpoints"
@@ -17,28 +18,23 @@ paths:
 time:
   tz_output: "UTC"
   split:
-    train_until: "2020-12-31 23:00:00"
-    val_until:   "2021-12-31 23:00:00"
-    test_until:  "2022-12-31 23:00:00"
+    # Adjust to fit within your 2023-01-01 to 2024-12-31 overlap
+    train_until: "2024-06-30 23:45:00"
+    val_until:   "2024-09-30 23:45:00"
+    test_until:  "2024-12-31 23:45:00"
 
-# Map your engineered CSV headers to canonical names the pipeline will use
+# Map your new headers
 columns:
   timestamp: "Time (UTC)"
-  wind_mw: "Wind_MW"
-  solar_mw: "Solar_MW"
-  load_mw: "Actual_Load_MW"
-  price_eur_mwh: "Price_EUR_MWh"
-  cf_wind: "CF_Wind"
-  cf_solar: "CF_Solar"
-  cap_wind_mw: "Wind_Cap_MW"
-  cap_solar_mw: "Solar_Cap_MW"
-  # optional holiday columns present in engineered CSV (adjust to yours)
+  load_mw: "load" 
   holiday_flags: ["is_public_holiday","is_weekend","is_special_day"]
 
 features:
-  context_hours: 168
-  horizon_hours: 12
-  scale_targets: false  # we train on native units/CF
+  # Adjusted for 15-min intervals (168 hours * 4 = 672 steps)
+  context_hours: 672 
+  # Adjusted for 15-min intervals (12 hours * 4 = 48 steps)
+  horizon_hours: 48  
+  scale_targets: false
 
 training:
   encoder:

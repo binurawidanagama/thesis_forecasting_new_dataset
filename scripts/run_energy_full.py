@@ -15,17 +15,17 @@ THESIS-GRADE FIXES ADDED (reporting + artifacts + RAM sampling):
 - Peak RAM sampling inside training batches every N steps
 
 Examples:
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 24  --horizon 12
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 24  --horizon 24
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 24  --horizon 72
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 96  --horizon 12
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 96  --horizon 24
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 96  --horizon 72
 
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 72  --horizon 12
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 72  --horizon 24
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 72  --horizon 72
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 288  --horizon 12
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 288  --horizon 24
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 288  --horizon 72
 
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 168 --horizon 12
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 168 --horizon 24
-python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 168 --horizon 72
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 672 --horizon 12
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 672 --horizon 24
+python scripts/run_energy_full.py --config configs/energy_full.yaml --lookback 672 --horizon 72
 """
 
 import os

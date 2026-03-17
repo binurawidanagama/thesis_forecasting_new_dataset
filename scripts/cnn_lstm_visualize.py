@@ -4,8 +4,8 @@ Plots both ENERGY and WEATHER forecasts.
 Saves plots to a clean separate folder structure.
 
 Usage:
-  python scripts/cnn_lstm_visualize.py --model cnn --out_dir plots --lookback 24 --horizon 12
-  python scripts/cnn_lstm_visualize.py --model lstm --out_dir thesis_images --lookback 72 --horizon 24
+  python scripts/cnn_lstm_visualize.py --model cnn --out_dir plots --lookback 96 --horizon 12
+  python scripts/cnn_lstm_visualize.py --model lstm --out_dir thesis_images --lookback 288 --horizon 24
   python scripts/cnn_lstm_visualize.py --model cnn (plots EVERYTHING to default 'plots' folder)
   python scripts/cnn_lstm_visualize.py --model cnn --horizon 72 (plots all lookbacks for H72)
 
@@ -13,41 +13,30 @@ Usage:
   python scripts/cnn_lstm_visualize.py --compare
   python scripts/cnn_lstm_visualize.py --compare --horizon 72
 
-"""
-"""
-Universal Visualizer for split Tasks.
-Plots both ENERGY and WEATHER forecasts.
-Saves plots to a clean separate folder structure.
-
-Usage:
-  # Plot specific winter week
-  python scripts/cnn_lstm_visualize.py --compare --start_date 2022-01-10
-
-  # Plot specific summer week
-  python scripts/cnn_lstm_visualize.py --compare --start_date 2022-07-15
-
-  # Default behavior (random slice)
-  python scripts/cnn_lstm_visualize.py --compare
+  # Plot specific week (e.g. Winter vs Summer)
+  python scripts/cnn_lstm_visualize.py --compare --start_date 2024-01-10
 """
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import argparse
 import glob
 import os
 
 # --- CONFIG: Features to Visualize ---
-# Matches the column names from your Baseline scripts
+# MATCHES your new 15-minute dataset targets
 TARGETS_TO_PLOT = [
-    "load_mw", "wind_mw", "solar_mw",
-    "temperature_2m_C", "shortwave_radiation_Wm2",
-    "relative_humidity_2m_pct", "precipitation_mm",
-    "wind_speed_100m", "surface_pressure_hPa"
+    "load_mw", 
+    "temperature_2m_C", 
+    "mean_global_radiation",
+    "precipitation_mm", 
+    "mean_wind_speed"
 ]
 
-def get_subset(df, start_date=None, length=168):
+def get_subset(df, start_date=None, length_hours=168):
     """
     Slices DataFrame by date if provided, otherwise uses default index.
-    Default length 168 = 1 Week.
+    Default length 168 = 1 Week (672 steps at 15-min intervals).
     """
     # Ensure timestamp is datetime
     if "timestamp" in df.columns:
@@ -55,27 +44,30 @@ def get_subset(df, start_date=None, length=168):
     
     if start_date:
         # Date-based slicing (Best for Thesis)
-        start_ts = pd.Timestamp(start_date).tz_localize("UTC")
-        end_ts = start_ts + pd.Timedelta(hours=length)
-        mask = (df["timestamp"] >= start_ts) & (df["timestamp"] <= end_ts)
+        start_ts = pd.Timestamp(start_date)
+        if start_ts.tzinfo is None:
+            start_ts = start_ts.tz_localize("UTC")
+            
+        end_ts = start_ts + pd.Timedelta(hours=length_hours)
+        mask = (df["timestamp"] >= start_ts) & (df["timestamp"] < end_ts)
         subset = df.loc[mask]
         
         if len(subset) == 0:
             print(f"[WARN] No data found for {start_date}. Falling back to default.")
-            return df.iloc[-length:]
+            return df.iloc[-length_hours * 4:] # 4 steps per hour
         return subset
     else:
         # Index-based slicing (Fallback)
-        # Default to a slice in the middle of the year
+        # Default to a slice in the middle of the dataset
         start_idx = 4000 if len(df) > 4200 else 0
-        return df.iloc[start_idx : start_idx + length]
+        return df.iloc[start_idx : start_idx + (length_hours * 4)]
 
 def plot_single(df, feature_name, title, save_path, start_date, model_color="#d62728"):
     """Standard single-model plot."""
     true_col = f"True_{feature_name}"
     pred_col = f"Pred_{feature_name}"
     
-    # Handle matching logic (e.g. wind_speed_100m matching wind_speed_100m (m/s))
+    # Handle matching logic 
     found_true = [c for c in df.columns if true_col in c]
     found_pred = [c for c in df.columns if pred_col in c]
     
@@ -91,10 +83,16 @@ def plot_single(df, feature_name, title, save_path, start_date, model_color="#d6
     plt.plot(subset["timestamp"], subset[t_col], label="Actual", color="black", linewidth=1.5, alpha=0.6)
     plt.plot(subset["timestamp"], subset[p_col], label="Forecast", color=model_color, linewidth=1.5, alpha=0.9)
     
+    # Format x-axis nicely for the thesis
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+    plt.xticks(rotation=0)
+    
     plt.title(title, fontsize=14)
     plt.ylabel(feature_name, fontsize=12)
-    plt.xlabel("Time (UTC)", fontsize=10)
-    plt.legend(fontsize=12)
+    plt.xlabel("Time (UTC) [Month-Day]", fontsize=10)
+    plt.legend(fontsize=12, loc="upper right")
     plt.grid(True, alpha=0.3, linestyle="--")
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
@@ -132,9 +130,15 @@ def plot_comparison(df_cnn, df_lstm, feature_name, title, save_path, start_date)
     # 3. CNN (Red - Solid)
     plt.plot(timestamps, sub_cnn[p_col], label="CNN", color="tab:red", linewidth=1.5, alpha=0.9)
     
+    # Format x-axis nicely for the thesis
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+    plt.xticks(rotation=0)
+    
     plt.title(title, fontsize=14)
     plt.ylabel(feature_name, fontsize=12)
-    plt.xlabel("Time (UTC)", fontsize=10)
+    plt.xlabel("Time (UTC) [Month-Day]", fontsize=10)
     plt.legend(fontsize=11, loc="upper right")
     plt.grid(True, alpha=0.3, linestyle="--")
     plt.tight_layout()
@@ -161,8 +165,11 @@ def run_visualization(model_type, compare_mode, target_lb, target_hz, out_root, 
             if target_hz and f"H{target_hz}" not in folder_name: continue
 
             print(f"Processing {folder_name}...")
-            try: df = pd.read_parquet(f)
-            except: continue
+            try: 
+                df = pd.read_parquet(f)
+            except Exception as e: 
+                print(f"Skipping {folder_name}: {e}")
+                continue
             
             dest = os.path.join(out_root, model_type.upper(), folder_name)
             os.makedirs(dest, exist_ok=True)
@@ -179,6 +186,10 @@ def run_visualization(model_type, compare_mode, target_lb, target_hz, out_root, 
         cnn_dir = "artifacts_cnn_baseline"
         lstm_dir = "artifacts_lstm_baseline"
         
+        if not os.path.exists(cnn_dir) or not os.path.exists(lstm_dir):
+            print(f"[ERROR] Cannot compare: Missing Baseline artifact folders.")
+            return
+
         cnn_folders = [os.path.basename(d) for d in glob.glob(os.path.join(cnn_dir, "*"))]
         
         for folder_name in cnn_folders:
@@ -188,19 +199,24 @@ def run_visualization(model_type, compare_mode, target_lb, target_hz, out_root, 
             path_c = os.path.join(cnn_dir, folder_name, "preds.parquet")
             path_l = os.path.join(lstm_dir, folder_name, "preds.parquet")
             
-            if not os.path.exists(path_l): continue
+            if not os.path.exists(path_l) or not os.path.exists(path_c): 
+                continue
 
             print(f"Comparing {folder_name}...")
             try:
                 df_c = pd.read_parquet(path_c)
                 df_l = pd.read_parquet(path_l)
-            except: continue
+            except Exception as e: 
+                print(f"Skipping {folder_name}: {e}")
+                continue
             
             dest = os.path.join(out_root, "COMPARISON", folder_name)
             os.makedirs(dest, exist_ok=True)
             
             for target in TARGETS_TO_PLOT:
-                out_name = f"COMPARE_{target}.png"
+                # Replace tricky characters in the filename so it doesn't create subfolders
+                safe_target = target.replace("/", "-").replace("(", "").replace(")", "").replace(" ", "_")
+                out_name = f"COMPARE_{safe_target}.png"
                 title = f"CNN vs LSTM ({folder_name})"
                 plot_comparison(df_c, df_l, target, title, os.path.join(dest, out_name), start_date)
 
@@ -213,7 +229,7 @@ if __name__ == "__main__":
     parser.add_argument("--horizon", type=int, default=None)
     
     # NEW: Date selection for thesis figures
-    parser.add_argument("--start_date", type=str, default=None, help="e.g. 2022-01-15")
+    parser.add_argument("--start_date", type=str, default=None, help="e.g. 2024-11-01")
     
     args = parser.parse_args()
     

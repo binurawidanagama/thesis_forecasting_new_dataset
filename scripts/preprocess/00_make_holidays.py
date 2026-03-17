@@ -1,6 +1,6 @@
 import pandas as pd, holidays, yaml, os
 cfg = yaml.safe_load(open("configs/default.yaml"))
-years = range(2017, 2023)
+years = range(2020, 2026)
 at = holidays.country_holidays("AT", years=years)
 rows = [{"date": pd.Timestamp(d).tz_localize("UTC"), "holiday_name": name}
         for d, name in sorted(at.items())]
