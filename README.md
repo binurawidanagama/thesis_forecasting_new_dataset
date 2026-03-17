@@ -11,20 +11,21 @@
 3. [Architecture overview](#architecture-overview)
 4. [Repository structure](#repository-structure)
 5. [Dataset and files](#dataset-and-files)
-6. [Train / validation / test split](#train--validation--test-split)
-7. [Models and symbolic layer](#models-and-symbolic-layer)
-8. [How to run the code](#how-to-run-the-code)
-9. [Benchmarking and visualisation](#benchmarking-and-visualisation)
-10. [Outputs produced by the pipeline](#outputs-produced-by-the-pipeline)
-11. [Notes on naming conventions](#notes-on-naming-conventions)
-12. [Dependencies](#dependencies)
-13. [Thesis context](#thesis-context)
+6. [Feature engineering](#feature-engineering)
+7. [Train / validation / test split](#train--validation--test-split)
+8. [Models and symbolic layer](#models-and-symbolic-layer)
+9. [How to run the code](#how-to-run-the-code)
+10. [Benchmarking and visualisation](#benchmarking-and-visualisation)
+11. [Outputs produced by the pipeline](#outputs-produced-by-the-pipeline)
+12. [Notes on naming conventions](#notes-on-naming-conventions)
+13. [Dependencies](#dependencies)
+14. [Thesis context](#thesis-context)
 
 ---
 
 ## Overview
 
-This repository contains the full experimental pipeline for a thesis on **resource-aware, multi-horizon, multivariate time-series forecasting**. The focus is not just raw prediction accuracy, but the trade-off between:
+This repository contains the full experimental pipeline for a thesis on **Efficient Hybrid Learning-and-Reasoning for Multi-Horizon Multivariate Time-Series Forecasting under Resource Constraints: A Comparative Evaluation of dCeNN–ELM–ASP approach with LSTM and CNN on Weather and Energy Data**.
 
 - predictive performance,
 - computational cost,
@@ -63,8 +64,6 @@ The current **weather configuration** predicts four targets:
 - `precipitation_mm`
 - `mean_global_radiation`
 - `mean_wind_speed`
-
-So this repository is **not** the old total-energy setup from the reference repo. It has been adapted to the new dataset and task definitions used in this thesis.
 
 ---
 
@@ -212,6 +211,41 @@ The current configs indicate a **15-minute time resolution** and use `Time (UTC)
   - `precipitation_mm`
   - `mean_global_radiation`
   - `mean_wind_speed`
+
+---
+
+## Feature engineering
+
+The repository uses **explicitly engineered calendar and seasonal features** to help the models learn repeating temporal structure without relying on raw timestamps alone. This is especially important for 15-minute forecasting, where time-of-day, weekly patterns, and holidays strongly influence both electricity demand and weather-linked behaviour.
+
+### Why these features are used
+
+Instead of feeding the model a plain hour or date index, the pipeline encodes time in a form that better reflects real periodic behaviour. For example, **23:45 and 00:00 are close in reality**, but naive numeric timestamps make them look far apart. Cyclical encodings fix that.
+
+### Core engineered features
+
+| Feature | Type | Description |
+|---|---|---|
+| `hour_sin` / `hour_cos` | Cyclical | Sine/cosine encoding of time-of-day, preserving the circular nature of hourly patterns. |
+| `dow_sin` / `dow_cos` | Cyclical | Sine/cosine encoding of day-of-week effects, useful for weekday vs. weekend demand differences. |
+| `month_sin` / `month_cos` | Cyclical | Sine/cosine encoding of annual seasonality across months. |
+| `is_weekend` | Boolean | Binary indicator for Saturday and Sunday. |
+| `is_public_holiday` | Boolean | Binary indicator for official Austrian public holidays. |
+| `is_special_day` | Boolean | Binary indicator for bridge days or other special calendar effects around holidays. |
+
+### Task-specific inputs
+
+For the **energy task**, these engineered calendar features are combined with weather drivers and the historical load series itself:
+
+- `temperature_2m_C`
+- `precipitation_mm`
+- `mean_global_radiation`
+- `mean_wind_speed`
+- `load_mw`
+
+For the **weather task**, the same temporal structure helps the model learn seasonal and diurnal dynamics alongside the meteorological variables being forecast.
+
+In practical terms, this feature design gives the models a structured notion of **time, seasonality, and social rhythm** rather than forcing them to rediscover it from scratch like a sleep-deprived raccoon doing statistics at 3 a.m.
 
 ---
 
@@ -445,9 +479,3 @@ across multi-horizon forecasting settings on Austrian weather and energy data un
 The emphasis is on a **reproducible end-to-end research workflow**: from raw CSV ingestion, to forecasting, to symbolic repair, to benchmark aggregation and thesis-ready plots / tables.
 
 ---
-
-## Suggested citation / description
-
-If you need a short repository description for GitHub, this works well:
-
-> Thesis repository for 15-minute Austrian weather and load forecasting using a hybrid dCeNN-ELM-ASP pipeline, benchmarked against CNN and LSTM baselines with accuracy, latency, and compute-aware evaluation.
